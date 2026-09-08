@@ -2,3 +2,4 @@
     gunicorn
     requests
     supabase
+python-dotenv
