@@ -4,7 +4,6 @@ import os
 
 app = Flask(__name__)
 
-# YE 3 CHEEZEIN VARIABLES ME DAL DO
 ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
@@ -21,20 +20,26 @@ def verify():
 def webhook():
     data = request.get_json()
     print("MESSAGE AYA:", data)
-    
+
     try:
-        msg = data['entry'][0]['changes'][0]['value']['messages'][0]
-        from_number = msg['from']
-        text = msg['text']['body']
-        
-        url = f"https://graph.facebook.com/v20.0/{PHONE_NUMBER_ID}/messages"
-        headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
-        payload = {
-            "messaging_product": "whatsapp",
-            "to": from_number,
-            "text": {"body": f"Auto Reply: {text}"}
-        }
-        requests.post(url, headers=headers, json=payload)
+        # Check karo message hai ya status update
+        if 'messages' in data['entry'][0]['changes'][0]['value']:
+            msg = data['entry'][0]['changes'][0]['value']['messages'][0]
+            from_number = msg['from']
+            text = msg['text']['body']
+
+            url = f"https://graph.facebook.com/v20.0/{PHONE_NUMBER_ID}/messages"
+            headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": from_number,
+                "type": "text", # <- YE ADD KIYA
+                "text": {"body": f"Auto Reply: {text}"}
+            }
+            res = requests.post(url, headers=headers, json=payload)
+            print("REPLY STATUS:", res.status_code, res.text) # <- YE LOG ME ERROR BATAYEGA
+        else:
+            print("Status update, not message")
     except Exception as e:
         print("Error:", e)
     return "ok", 200
