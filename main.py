@@ -28,7 +28,7 @@ def webhook():
             ai_reply = None
             if GEMINI_API_KEY:
                 try:
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
                     payload = {"contents": [{"parts": [{"text": f"Reply in same language as user, friendly: {user_text}"}]}]}
                     r = requests.post(url, json=payload, timeout=15)
                     j = r.json()
