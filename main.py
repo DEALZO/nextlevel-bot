@@ -1,13 +1,11 @@
-import os
-import requests
+import os, requests
 from flask import Flask, request
-
 app = Flask(__name__)
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 @app.route("/webhook", methods=["GET"])
 def verify():
@@ -24,46 +22,30 @@ def webhook():
             msg = value["messages"][0]
             from_num = msg["from"]
             user_text = msg["text"]["body"]
-            print(f"User: {user_text}")
 
-            # --- FIXED GEMINI CALL ---
-            ai_reply = "Salam! NextLevel me khush amdeed. Aap ko kis service me help chahiye?"
-            if GEMINI_API_KEY:
-                try:
-                    # Sahi model ka naam
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-                    payload = {
-                        "contents": [{"parts": [{"text": f"You are NextLevel Agency assistant. User: {user_text}. Reply short, friendly, Roman Urdu/English."}]}],
-                        "safetySettings": [
-                            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-                            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-                            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-                            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
-                        ]
-                    }
-                    r = requests.post(url, json=payload, timeout=15)
-                    j = r.json()
-                    print(f"Gemini Full Response: {j}")
+            # --- GROQ AI (Smart) ---
+            try:
+                url = "https://api.groq.com/openai/v1/chat/completions"
+                headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+                payload = {
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [
+                        {"role": "system", "content": "You are NextLevel Agency assistant from Quetta. You sell Website Development, Social Media Marketing, and WhatsApp Bots. Be friendly, helpful, speak in Roman Urdu + English mix. Keep reply short (2-3 lines). If user says marketing, explain your marketing package: Facebook Ads, Content, Leads. Always ask about their business."},
+                        {"role": "user", "content": user_text}
+                    ],
+                    "temperature": 0.7
+                }
+                r = requests.post(url, json=payload, headers=headers, timeout=15)
+                j = r.json()
+                ai_reply = j["choices"][0]["message"]["content"]
+            except Exception as e:
+                print(f"Groq Error: {e} {r.text if 'r' in locals() else ''}")
+                ai_reply = "Zabardast! Marketing ke liye hum Facebook/Instagram Ads, daily posts, aur leads generation karte hain. Aap ka business kis city me hai aur kis cheez ka hai?"
 
-                    if "candidates" in j:
-                        ai_reply = j["candidates"][0]["content"]["parts"][0]["text"]
-                    else:
-                        print("Gemini blocked/error")
-                        # Smart fallback, same reply nahi
-                        if "buy" in user_text.lower() or "service" in user_text.lower():
-                            ai_reply = "Zabardast! Aap ko kaunsi service chahiye? 1) Website 2) Marketing 3) WhatsApp Bot. Bataiye?"
-                        else:
-                            ai_reply = f"Ji {user_text} ke bare me bataiye, main details deta hun. Aap ka business kis cheez ka hai?"
-
-                except Exception as e:
-                    print(f"Gemini Exception: {e}")
-
-            # --- SEND TO WHATSAPP ---
             wa_url = f"https://graph.facebook.com/v20.0/{PHONE_NUMBER_ID}/messages"
             headers = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
             wa_payload = {"messaging_product": "whatsapp", "to": from_num, "text": {"body": ai_reply[:4000]}}
-            res = requests.post(wa_url, json=wa_payload, headers=headers)
-            print(f"WA Send Status: {res.status_code}")
+            requests.post(wa_url, json=wa_payload, headers=headers)
 
     except Exception as e:
         print(f"Webhook Error: {e}")
