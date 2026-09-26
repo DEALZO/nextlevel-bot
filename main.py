@@ -24,40 +24,47 @@ def webhook():
             msg = entry["messages"][0]
             from_num = msg["from"]
             user_text = msg["text"]["body"]
-
-            # YEH LINE SAB THEEK KAREGI - Jis number pe msg aaya usi ka ID use karo
             phone_number_id = entry["metadata"]["phone_number_id"]
 
-            print(f"MSG from {from_num} on {phone_number_id}: {user_text}")
+            print(f"IN: {user_text} FROM {from_num} KEY_LEN {len(GROQ_API_KEY)}")
 
+            # GROQ CALL
             ai_reply = ""
             try:
                 url = "https://api.groq.com/openai/v1/chat/completions"
                 headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
                 payload = {
-                    "model": "llama-3.1-8b-instant",
+                    "model": "llama-3.3-70b-versatile", # Sab se stable
                     "messages": [
-                        {"role": "system", "content": "You are NextLevel Agency from Quetta. You sell Website, Marketing, WhatsApp Bot. Reply in short Roman Urdu. Don't copy user msg, give helpful answer."},
+                        {"role": "system", "content": "You are NextLevel Agency, Quetta. Helpful ecommerce assistant. Reply short, in Roman Urdu. Don't repeat same line, be smart."},
                         {"role": "user", "content": user_text}
-                    ]
+                    ],
+                    "temperature": 0.7
                 }
                 r = requests.post(url, json=payload, headers=headers, timeout=20)
                 j = r.json()
-                print(f"GROQ: {j}")
+                print(f"GROQ RAW: {j}")
+                if "choices" not in j:
+                    raise Exception(f"Groq error: {j}")
                 ai_reply = j["choices"][0]["message"]["content"]
             except Exception as e:
-                print(f"Groq fail: {e}")
-                ai_reply = "Quetta ecommerce ke liye hum Shopify store + FB Ads + COD setup karte hain. Aap kya sell karte ho?"
+                print(f"GROQ FAIL: {e}")
+                # Agar fail bhi ho to alag alag reply, same nahi
+                low = user_text.lower()
+                if "hello" in low:
+                    ai_reply = "Wa Alaikum Salam! Kya haal hai? Ecommerce store ka kya plan hai?"
+                elif "info" in low:
+                    ai_reply = "Bilkul! Hum Website (25k), Marketing (15k/month), WhatsApp Bot (10k) dete hain. Aap ko kis me info chahiye?"
+                else:
+                    ai_reply = f"Samajh gaya! {user_text} ke liye best ye hai ke hum pehle product dekh lete hain. Kya bechte ho aap?"
 
-            # Usi number se reply jahan se msg aaya
             wa_url = f"https://graph.facebook.com/v20.0/{phone_number_id}/messages"
             wa_headers = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
             wa_payload = {"messaging_product": "whatsapp", "to": from_num, "text": {"body": ai_reply}}
             res = requests.post(wa_url, json=wa_payload, headers=wa_headers)
-            print(f"WA {phone_number_id} Status: {res.status_code} {res.text[:200]}")
-
+            print(f"WA OUT: {res.status_code}")
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"MAIN ERR: {e}")
     return "OK", 200
 
 if __name__ == "__main__":
