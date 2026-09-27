@@ -10,7 +10,7 @@ def get_ai_reply(user_msg):
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
         payload = {
-            "model": "llama-3.1-8b-instant",
+            "model": "llama-3.3-70b-versatile",
             "messages": [
                 {"role": "system", "content": "You are NextLevel Furniture Chiniot assistant for owner M. Ahmed. Sell Pure Sheesham wood furniture. Single Bed 35000, Double Bed 70000-85000, 5-Seater Sofa 70000. Delivery all Pakistan. Reply in friendly Roman Urdu mix. Keep short."},
                 {"role": "user", "content": user_msg}
