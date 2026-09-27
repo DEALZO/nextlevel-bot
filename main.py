@@ -1,24 +1,40 @@
-# webhook wala part same, sirf ye function change karo
-def reply_later(phone_id, to, user_text):
+import os, requests, threading
+from flask import Flask, request
+app = Flask(__name__)
+
+VERIFY = os.getenv("VERIFY_TOKEN","").strip()
+TOKEN = os.getenv("ACCESS_TOKEN","").strip()
+GROQ = os.getenv("GROQ_API_KEY","").strip()
+
+def do_reply(pid, to, txt):
     try:
-        url = "https://api.groq.com/openai/v1/chat/completions"
-        headers = {"Authorization": f"Bearer {GROQ_API_KEY.strip()}", "Content-Type": "application/json"}
-        payload = {
-            "model": "llama-3.3-70b-versatile", # zyada stable model
-            "messages": [
-                {"role":"system","content":"You are NextLevel Saas Quetta furniture salesman. Reply in short helpful Roman Urdu. Client: M Ahmed."},
-                {"role":"user","content": user_text}
-            ],
-            "max_tokens": 200
-        }
-        r = requests.post(url, json=payload, headers=headers, timeout=15)
-        j = r.json()
-        print(f"GROQ FULL RESPONSE: {j}") # ye Railway logs me nazar ayega
-        ai_reply = j["choices"][0]["message"]["content"] if "choices" in j else "Salam M. Ahmed! Aap ko kis cheez ki info chahiye? Bed, Chair?"
-        # send whatsapp...
-        wa_url = f"https://graph.facebook.com/v20.0/{phone_id}/messages"
-        wa_headers = {"Authorization": f"Bearer {ACCESS_TOKEN.strip()}", "Content-Type": "application/json"}
-        wa_data = {"messaging_product":"whatsapp","to":to,"text":{"body":ai_reply}}
-        requests.post(wa_url, headers=wa_headers, json=wa_data, timeout=10)
+        # Groq call
+        g = requests.post("https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization":f"Bearer {GROQ}","Content-Type":"application/json"},
+            json={"model":"llama-3.1-8b-instant","messages":[{"role":"system","content":"You are furniture shop assistant in Quetta. Reply in short Roman Urdu."},{"role":"user","content":txt}],"max_tokens":150},
+            timeout=12).json()
+        reply = g["choices"][0]["message"]["content"] if "choices" in g else "Salam! Kis furniture ki info chahiye aap ko?"
+        print(f"Groq: {g}")
+        requests.post(f"https://graph.facebook.com/v20.0/{pid}/messages",
+            headers={"Authorization":f"Bearer {TOKEN}","Content-Type":"application/json"},
+            json={"messaging_product":"whatsapp","to":to,"text":{"body":reply}}, timeout=10)
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"ERR: {e}")
+
+@app.route("/webhook", methods=["GET"])
+def v():
+    if request.args.get("hub.verify_token")==VERIFY:
+        return request.args.get("hub.challenge")
+    return "no",403
+
+@app.route("/webhook", methods=["POST"])
+def w():
+    try:
+        d=request.get_json(); v=d["entry"][0]["changes"][0]["value"]
+        if "messages" in v:
+            threading.Thread(target=do_reply, args=(v["metadata"]["phone_number_id"], v["messages"][0]["from"], v["messages"][0].get("text",{}).get("body","Hi"))).start()
+    except: pass
+    return "OK",200 # <-- Ye sab se zaroori hai, foran OK
+
+@app.route("/")
+def h(): return "OK",200
