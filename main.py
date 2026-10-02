@@ -1,4 +1,5 @@
 import os, requests, json, datetime
+from collections import defaultdict
 from flask import Flask, request
 app = Flask(__name__)
 
@@ -34,33 +35,69 @@ def home():
 @app.route("/chats")
 def view_chats():
     if not os.path.exists(CHAT_FILE):
-        return "<h2 style='text-align:center;margin-top:50px'>Abhi tak koi chat nahi hui</h2>"
+        return "<h2 style='text-align:center'>Abhi tak koi chat nahi hui</h2>"
     try:
         with open(CHAT_FILE, "r") as f:
             chats = json.load(f)
     except:
-        return "File error"
+        return "No chats"
 
-    html = """
-    <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-    body{margin:0;font-family:Arial;background:#efeae2}
-   .header{background:#008069;color:white;padding:15px;font-size:18px;font-weight:bold;text-align:center}
-   .msg{max-width:80%;margin:10px;padding:10px 15px;border-radius:8px;font-size:15px;clear:both}
-   .user{float:left;background:white;color:black;border-radius:0 8px 8px 8px}
-   .bot{float:right;background:#d9fdd3;color:black;border-radius:8px 0 8px 8px}
-   .meta{font-size:11px;color:gray;margin-top:5px}
-   .wrap{padding:10px;overflow:auto}
-    </style></head><body>
-    <div class="header">Next Gen Agency - Chats (03196854972)</div>
-    <div class="wrap">
-    """
-    for c in reversed(chats):
-        html += f"<div class='msg user'><b>{c['number']}</b><br>{c['user']}<div class='meta'>{c['time']}</div></div>"
-        html += f"<div class='msg bot'>{c['bot']}<div class='meta'>Bot</div></div><div style='clear:both'><hr style='border:none;border-top:1px solid #ddd;margin:15px 0'></div>"
+    grouped = defaultdict(list)
+    for c in chats:
+        grouped[c["number"]].append(c)
 
-    html += "</div></body></html>"
-    return html
+    selected_num = request.args.get("num")
+
+    # Agar kisi number par click kiya hai to uski puri chat dikhao
+    if selected_num:
+        if selected_num not in grouped:
+            return f"<h3>Number {selected_num} not found</h3><a href='/chats'>Back</a>"
+
+        html = f"""
+        <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+        body{{margin:0;font-family:Arial;background:#e5ddd5}}
+      .header{{background:#075e54;color:white;padding:12px;position:sticky;top:0;display:flex;align-items:center}}
+      .header a{{color:white;text-decoration:none;margin-right:15px;font-size:22px}}
+      .chat{{padding:10px 15px;padding-bottom:80px}}
+      .bubble{{max-width:70%;padding:8px 10px;margin:5px 0;border-radius:8px;font-size:14px;line-height:18px;box-shadow:0 1px 1px rgba(0,0,0,0.2);clear:both;word-wrap:break-word}}
+      .user{{float:left;background:white;border-top-left-radius:0}}
+      .bot{{float:right;background:#dcf8c6;border-top-right-radius:0}}
+      .time{{font-size:10px;color:gray;text-align:right;margin-top:4px}}
+      .clr{{clear:both}}
+        </style></head><body>
+        <div class="header"><a href="/chats">←</a> {selected_num} - Next Gen Agency</div>
+        <div class="chat">
+        """
+        for c in grouped[selected_num]:
+            html += f"<div class='bubble user'>{c['user']}<div class='time'>{c['time']}</div></div><div class='clr'></div>"
+            html += f"<div class='bubble bot'>{c['bot']}<div class='time'>✓✓ Bot</div></div><div class='clr'></div>"
+
+        html += "</div></body></html>"
+        return html
+
+    # Agar koi number select nahi kiya to saare numbers ki list dikhao
+    else:
+        html = """
+        <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+        body{margin:0;font-family:Arial;background:white}
+      .header{background:#075e54;color:white;padding:15px;font-size:18px;font-weight:bold}
+      .contact{padding:15px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center;text-decoration:none;color:black}
+      .contact:hover{background:#f5f5f5}
+      .name{font-weight:bold;font-size:16px}
+      .last{color:gray;font-size:13px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+      .count{background:#25d366;color:white;border-radius:50%;padding:2px 7px;font-size:12px}
+        </style></head><body>
+        <div class="header">📱 Next Gen Agency Chats (03196854972) - Total: """ + str(len(grouped)) + """ contacts</div>
+        """
+        # latest first
+        for num, msgs in sorted(grouped.items(), key=lambda x: x[1][-1]['time'], reverse=True):
+            last_msg = msgs[-1]['user'][:30]
+            html += f"<a class='contact' href='/chats?num={num}'><div><div class='name'>{num}</div><div class='last'>{last_msg}</div></div><div class='count'>{len(msgs)}</div></a>"
+
+        html += "</body></html>"
+        return html
 
 @app.route("/webhook", methods=["GET"])
 def verify():
@@ -97,12 +134,11 @@ def webhook():
                 if "choices" in j:
                     ai_reply = j["choices"][0]["message"]["content"]
                     break
-            except Exception as e:
-                print(f"Model fail {e}")
+            except:
                 continue
 
         if not ai_reply:
-            ai_reply = "Wa Alaikum Salam! Next Gen Agency me khush amdeed. Hum 2000+ businesses ko online laa chuke hain aur 1300+ log hamara ChatBot use kar rahe hain. Aapko Website chahiye ya ChatBot?"
+            ai_reply = "Wa Alaikum Salam! Next Gen Agency me khush amdeed 🚀"
 
         save_chat(from_num, user_text, ai_reply)
 
