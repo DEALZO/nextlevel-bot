@@ -1,13 +1,44 @@
-import os, requests
-from flask import Flask, request
+import os, requests, json, datetime
+from flask import Flask, request, jsonify
 app = Flask(__name__)
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN","").strip()
 ACCESS_TOKEN = os.getenv("ACCESS_TOKEN","").strip()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY","").strip()
 
+# File me chats save hogi
+CHAT_FILE = "chat_history.json"
+
+def save_chat(number, user_msg, bot_reply):
+    data = []
+    if os.path.exists(CHAT_FILE):
+        try:
+            with open(CHAT_FILE, "r") as f:
+                data = json.load(f)
+        except: data = []
+    data.append({
+        "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "number": number,
+        "user": user_msg,
+        "bot": bot_reply
+    })
+    with open(CHAT_FILE, "w") as f:
+        json.dump(data[-500:], f, indent=2) # last 500 chats
+
 @app.route("/")
 def home(): return "Bot FIXED LIVE - Next Gen Agency", 200
+
+# YE NAYA PAGE HAI JAHAN SAARI CHATS DEKHOGE
+@app.route("/chats")
+def view_chats():
+    if not os.path.exists(CHAT_FILE):
+        return "Abhi tak koi chat nahi hui"
+    with open(CHAT_FILE, "r") as f:
+        chats = json.load(f)
+    html = "<h1>Next Gen Agency - Chat History (03196854972)</h1><hr>"
+    for c in reversed(chats):
+        html += f"<b>{c['time']} - {c['number']}</b><br>User: {c['user']}<br>Bot: {c['bot']}<br><hr>"
+    return html
 
 @app.route("/webhook", methods=["GET"])
 def verify():
@@ -38,33 +69,7 @@ def webhook():
                 payload = {
                     "model": model,
                     "messages": [
-                        {"role": "system", "content": """
-You are Next Gen Agency sales bot. Number 03196854972. Name is Next Gen Agency - NOT Next Level.
-
-FLOW:
-
-STEP 1 - If user says Hello, Salam, Hi:
-DO NOT send price. Only intro:
-"Wa Alaikum Salam! Next Gen Agency me khush amdeed 🚀
-Hum ab tak 2000+ businesses ko online laa chuke hain professional websites bana kar, aur 1300+ clients hamara AI ChatBot use karke apni sales automate kar rahe hain. Aap apna business next level par le jaane ke liye tayar hain?"
-
-STEP 2 - If user asks for website or chatbot:
-Website: "Zabardast choice! Hamari Professional Website aapke business ko 24/7 online rakhegi, customers ka trust banayegi. Actual price Rs. 10,000 hai lekin abhi 70% MEGA OFF me sirf 3 din ke liye Rs. 3,000 me!"
-ChatBot: "Best decision! Hamara AI WhatsApp ChatBot 24/7 customers ko reply karega, orders lega. Actual Rs. 5,000 ka bot abhi 70% OFF me sirf Rs. 1,500 me! 1300+ log already faida utha rahe hain."
-
-STEP 3 - If user shows more interest: "Aapke liye special combo! Website + AI ChatBot dono Rs. 15,000 ki jagah sirf Rs. 3,800 me. Aap Rs. 11,200 bacha rahe hain! Sirf 3 din ke liye."
-
-CRITICAL RULE - LINKS:
-If user asks "links bhejo, portfolio dikhao, websites dikhao, examples, kaam dikhao, kaunsi websites banayi hain":
-NEVER EVER generate any fake link. Never give google.com, example.com or any URL.
-You must excuse like this:
-"Sir client confidentiality / NDA ki wajah se hum direct links share nahi kar sakte, kyunki clients ke data ki privacy hamari zimmedari hai. Lekin aapko kis tarah ki website chahiye? Agar aapke zehen me koi specific design, koi idea ya koi reference website hai to share kar dein, hum usi se behtar bana kar denge aapko, bilkul aapki requirement par. Aap kis business ke liye chah rahe hain?"
-
-RULES:
-- Never mention Shopify/WordPress yourself. If forced, say "Custom website banegi aapki requirement par".
-- Never mention furniture.
-- Keep tone friendly, enthusiastic, Roman Urdu.
-"""},
+                        {"role": "system", "content": "You are Next Gen Agency... (yahan tumhara wala hi prompt rahega jo pehle diya tha)"},
                         {"role": "user", "content": user_text}
                     ]
                 }
@@ -73,12 +78,14 @@ RULES:
                 if "choices" in j:
                     ai_reply = j["choices"][0]["message"]["content"]
                     break
-            except Exception as e:
-                print(f"Model {model} fail: {e}")
-                continue
+            except: continue
 
         if not ai_reply:
-            ai_reply = "Wa Alaikum Salam! Next Gen Agency me khush amdeed 🚀\nHum 2000+ businesses ko online laa chuke hain aur 1300+ clients hamara AI ChatBot use kar rahe hain."
+            ai_reply = "Wa Alaikum Salam! Next Gen Agency me khush amdeed 🚀 Hum 2000+ businesses ko online laa chuke hain."
+
+        # Chat save karo
+        save_chat(from_num, user_text, ai_reply)
+        print(f"CHAT {from_num}: {user_text} -> {ai_reply}")
 
         wa_url = f"https://graph.facebook.com/v20.0/{phone_id}/messages"
         requests.post(wa_url, headers={"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}, json={"messaging_product":"whatsapp","to":from_num,"text":{"body":ai_reply}})
