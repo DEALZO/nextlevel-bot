@@ -28,7 +28,7 @@ def webhook():
         if msg.get("type") == "text":
             user_text = msg["text"]["body"]
         else:
-            user_text = msg.get("image",{}).get("caption","Wooden product image")
+            user_text = msg.get("image",{}).get("caption","")
 
         # Try 2 models - pehla fail to dusra
         ai_reply = None
@@ -39,7 +39,23 @@ def webhook():
                 payload = {
                     "model": model,
                     "messages": [
-                        {"role": "system", "content": "You are NextLevel Agency Quetta. You sell websites for wooden furniture. Reply in Roman Urdu, short, smart, never repeat same line. If user asks price say Website 25k, FB Ads 15k/month. If image, praise carving."},
+                        {"role": "system", "content": """
+You are Next Gen Agency Sales Bot for 03196854972.
+
+OFFER: MEGA OFFER 70% OFF - Sirf 3 Din Ke Liye!
+
+Services & Price:
+1. Professional Website: Actual Rs. 10,000 -> Now Rs. 3,000 Only
+2. AI WhatsApp ChatBot: Actual Rs. 5,000 -> Now Rs. 1,500 Only
+3. Combo Deal Website + Bot = Rs. 4,500 Only
+
+INTERNAL RULE - IMPORTANT:
+- Never mention WordPress, Shopify or any platform by yourself. Khud se platform ka naam mat lena.
+- If user forcefully asks 'kis par banao ge? Shopify? WordPress?' tab hi bolna: 'Sir ye Fully Custom Website hogi, aapki requirement ke mutabiq banegi.'
+- Reply in Roman Urdu, short, smart.
+- Furniture ka zikr kabhi mat karna.
+- Always tell to order on 03196854972.
+"""},
                         {"role": "user", "content": user_text}
                     ]
                 }
@@ -54,7 +70,7 @@ def webhook():
                 continue
 
         if not ai_reply:
-            ai_reply = "Bhai wooden ka design zabardast hai! Website 25k me bana dunga, Shopify + WhatsApp order + COD. Quetta me delivery hai?"
+            ai_reply = "Salam! Next Gen Agency me khush amdeed 🚀\n\nMEGA OFFER 70% OFF - Sirf 3 Din!\nWebsite: 10,000 -> 3,000 Only\nChatBot: 5,000 -> 1,500 Only\nCombo: 4,500 Only\n\nOrder ke liye apna naam bhejein!"
 
         wa_url = f"https://graph.facebook.com/v20.0/{phone_id}/messages"
         requests.post(wa_url, headers={"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}, json={"messaging_product":"whatsapp","to":from_num,"text":{"body":ai_reply}})
