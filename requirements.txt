@@ -1,5 +1,6 @@
 Flask
 requests
+groq
 gunicorn
 ollama
 python-dotenv
