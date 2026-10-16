@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-import os, requests
+import os, requests, base64
 from groq import Groq
 
 app = Flask(__name__)
@@ -10,31 +10,52 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 
 processed_ids = set()
 
-# TUMHARA BUSINESS PROMPT
 SYSTEM_PROMPT = """
 You are NextLevel-Bot, sales agent for NextLevel Digital.
-
-Business:
-1. We sell Professional Websites (Business, E-commerce, Portfolio) - Starting Rs 15k
-2. We sell AI WhatsApp Chatbots like yourself for businesses.
-
-Your Goal: User ko client banana.
-- User agar 'Helo / Hi' kahe to: 'Salam! Main NextLevel Bot hun. Hum professional websites aur AI chatbots banate hain jo aapki sales 10x kar dete hain. Aapko kis cheez me interest hai? 1. Website 2. AI Bot'
-- Price puche to packages batao, cheap mat bolo, value batao.
-- Hamesha Urdu Roman / English mix me short, friendly, sales tone me jawab do.
-- Kabhi bhi user ka same word repeat mat karo.
-- Last me hamesha CTA do: 'Kya apko demo dikhaun?'
+Business: 1. Professional Websites (Rs 15k se start) 2. AI WhatsApp Chatbots.
+Goal: User ko client banana. Agar user pic bheje to us pic ko describe karo aur bolo ke 'Is tarah ki website/bot hum bana sakte hain'. Hamesha Urdu Roman + English mix me short sales reply do.
+NEVER repeat same word. Always give helpful full sentence.
 """
 
-def ask_ai(user_msg):
+def get_image_base64(media_id):
+    try:
+        # Step 1: Get media URL from WhatsApp
+        url = f"https://graph.facebook.com/v20.0/{media_id}"
+        headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
+        r = requests.get(url, headers=headers, timeout=20)
+        media_url = r.json().get("url")
+        if not media_url: return None
+        
+        # Step 2: Download image
+        r2 = requests.get(media_url, headers=headers, timeout=20)
+        return base64.b64encode(r2.content).decode('utf-8')
+    except Exception as e:
+        print(f"Image Download Error: {e}")
+        return None
+
+def ask_ai_text(user_msg):
     client = Groq(api_key=GROQ_API_KEY)
     chat = client.chat.completions.create(
         model="openai/gpt-oss-20b",
+        messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user_msg}]
+    )
+    return chat.choices[0].message.content
+
+def ask_ai_image(image_b64, caption="Is pic me kya hai?"):
+    client = Groq(api_key=GROQ_API_KEY)
+    # Vision model - pic read kar sakta hai
+    chat = client.chat.completions.create(
+        model="meta-llama/llama-4-scout-17b-16e-instruct",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_msg}
-        ],
-        temperature=0.7
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": caption},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}
+                ]
+            }
+        ]
     )
     return chat.choices[0].message.content
 
@@ -59,16 +80,36 @@ def webhook():
                 for msg in change.get("value", {}).get("messages", []):
                     if msg.get("id") in processed_ids: continue
                     processed_ids.add(msg.get("id"))
-                    if msg.get("type") != "text": continue
-                    
+
                     phone = msg.get("from")
-                    text = msg.get("text", {}).get("body", "")
                     
-                    reply = ask_ai(text)
-                    send_whatsapp(phone, reply)
+                    # CASE 1: TEXT MESSAGE
+                    if msg.get("type") == "text":
+                        text = msg.get("text", {}).get("body", "")
+                        print(f"TEXT from {phone}: {text}")
+                        reply = ask_ai_text(text)
+                        send_whatsapp(phone, reply)
+
+                    # CASE 2: IMAGE MESSAGE - YE NAYA HAI
+                    elif msg.get("type") == "image":
+                        media_id = msg.get("image", {}).get("id")
+                        caption = msg.get("image", {}).get("caption", "Is pic ke baare me batao")
+                        print(f"IMAGE from {phone}: {media_id}")
+                        send_whatsapp(phone, "Pic mil gayi, 2 sec me analysis kar raha hun...")
+
+                        b64 = get_image_base64(media_id)
+                        if b64:
+                            reply = ask_ai_image(b64, caption)
+                        else:
+                            reply = "Pic download nahi ho saki, dobara bhejo."
+                        send_whatsapp(phone, reply)
+
     except Exception as e:
-        print(e)
+        print(f"Webhook Error: {e}")
     return jsonify({"status": "ok"}), 200
 
 @app.route('/')
-def home(): return "NextLevel Sales Bot Running", 200
+def home(): return "Bot with Image Support Running", 200
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
