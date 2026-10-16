@@ -8,8 +8,9 @@ app = Flask(__name__)
 WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN", "")
 PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID", "")
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "nextlevel123")
-OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY", "") # Isko Railway Variables me add karna
-OLLAMA_URL = "https://api.ollama.com/v1/chat/completions"
+OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY", "")
+# FIX 1: Sahi URL
+OLLAMA_URL = "https://ollama.com/v1/chat/completions"
 
 user_memory = {}
 
@@ -22,19 +23,24 @@ def ask_ollama(prompt):
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "llama3.2",  # llava ki jagah ye tez aur sasta hai, image ke liye llava use karna
+        "model": "llama3.1",  # FIX 2: llama3.2 ki jagah llama3.1
         "messages": [{"role": "user", "content": prompt}],
     }
     try:
-        r = requests.post(OLLAMA_URL, headers=headers, json=payload, timeout=30)
+        r = requests.post(OLLAMA_URL, headers=headers, json=payload, timeout=60)
+        print(f"Ollama Status: {r.status_code}")
+        print(f"Ollama Response: {r.text[:500]}") # Logs me response dekho
+        
         data = r.json()
-        # Ollama Cloud API ka response
-        if 'choices' in data:
+        if 'choices' in data and len(data['choices']) > 0:
             return data['choices'][0]['message']['content']
-        return data.get('response', str(data))
+        elif 'message' in data:
+            return data['message'].get('content', str(data))
+        else:
+            return f"Ollama Error: {data}"
     except Exception as e:
-        print(f"Ollama Error: {e}")
-        return "Sorry, AI thoda busy hai, dobara koshish karo."
+        print(f"Ollama Exception: {e}")
+        return f"Sorry, AI error: {e}"
 
 def send_whatsapp(to, text):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
@@ -46,15 +52,14 @@ def send_whatsapp(to, text):
         "messaging_product": "whatsapp",
         "to": to,
         "type": "text",
-        "text": {"body": text[:4000]}  # WhatsApp limit
+        "text": {"body": text[:4000]}
     }
     try:
         r = requests.post(url, headers=headers, json=payload)
-        print(f"WhatsApp Send Status: {r.text}")
+        print(f"WhatsApp Send Status: {r.status_code} {r.text}")
     except Exception as e:
         print(f"Send Error: {e}")
 
-# 1. Verification ke liye - Meta ye call karta hai
 @app.route('/webhook', methods=['GET'])
 def verify_webhook():
     mode = request.args.get("hub.mode")
@@ -66,7 +71,6 @@ def verify_webhook():
     else:
         return "Verification failed", 403
 
-# 2. Messages ke liye
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.get_json()
@@ -92,35 +96,22 @@ def webhook():
                     if msg_type == "text":
                         text = msg.get("text", {}).get("body", "")
                     elif msg_type == "audio":
-                        text = "[User sent a voice note, transcription currently disabled for Railway]"
+                        text = "User sent a voice note, reply that you got voice note"
                     elif msg_type == "image":
-                        text = "[User sent an image] Describe it friendly."
+                        text = "User sent an image, reply friendly"
                     else:
                         text = f"User sent {msg_type}"
 
                     if not text:
                         continue
 
-                    # Memory + Ollama
                     user_memory[phone].append(text)
                     if len(user_memory[phone]) > 5:
                         user_memory[phone] = user_memory[phone][-5:]
                     
                     context = " ".join(user_memory[phone])
+                    reply = ask_ollama(f"Chat history: {context}\nNew message: {text}\nReply as friendly WhatsApp bot in same language user used (Urdu/Hindi/English). Keep it short.")
                     
-                    # Wikipedia check
-                    if "wikipedia" in text.lower():
-                        import wikipedia
-                        try:
-                            q = text.lower().replace("wikipedia","").strip()
-                            reply = wikipedia.summary(q, sentences=2)
-                        except:
-                            reply = ask_ollama(f"Chat history: {context}\nNew: {text}\nReply as friendly WhatsApp bot in same language user used.")
-                    elif len(text) > 300:
-                        reply = ask_ollama(f"Summarize this in 2 lines: {text}")
-                    else:
-                        reply = ask_ollama(f"Chat history: {context}\nNew message: {text}\nReply as friendly WhatsApp support bot. Keep it short.")
-
                     send_whatsapp(phone, reply)
 
     except Exception as e:
