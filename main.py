@@ -13,45 +13,44 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 user_memory = {}
 
 def ask_ai(prompt):
-    # TRY 1: Ollama Cloud - Native API (Most Stable)
+    # TRY 1: Ollama Cloud - Free plan wala model (Logs me isi ka naam aaya hai)
     if OLLAMA_API_KEY:
         try:
             url = "https://ollama.com/api/chat"
             headers = {"Authorization": f"Bearer {OLLAMA_API_KEY}", "Content-Type": "application/json"}
-            payload = {"model": "llama3.1", "messages": [{"role": "user", "content": prompt}], "stream": False}
+            # FIX: Free plan ke liye gemma3:4b
+            payload = {"model": "gemma3:4b", "messages": [{"role": "user", "content": prompt}], "stream": False}
             r = requests.post(url, headers=headers, json=payload, timeout=45)
-            print(f"[OLLAMA NATIVE] {r.status_code} - {r.text[:400]}")
+            print(f"[OLLAMA] {r.status_code} - {r.text[:500]}")
             if r.status_code == 200:
                 data = r.json()
-                return data.get("message", {}).get("content") or data.get("response")
+                return data.get("message", {}).get("content")
         except Exception as e:
-            print(f"Ollama Native Error: {e}")
+            print(f"Ollama Error: {e}")
 
-        # TRY 2: Ollama Cloud - OpenAI Compatible
-        try:
-            url = "https://ollama.com/v1/chat/completions"
-            headers = {"Authorization": f"Bearer {OLLAMA_API_KEY}", "Content-Type": "application/json"}
-            payload = {"model": "llama3.1", "messages": [{"role": "user", "content": prompt}]}
-            r = requests.post(url, headers=headers, json=payload, timeout=45)
-            print(f"[OLLAMA OPENAI] {r.status_code} - {r.text[:400]}")
-            if r.status_code == 200:
-                data = r.json()
-                return data['choices'][0]['message']['content']
-        except Exception as e:
-            print(f"Ollama OpenAI Error: {e}")
-
-    # TRY 3: Groq (Backup - 100% Working)
+    # TRY 2: Groq - Naya model jo abhi working hai
     if GROQ_API_KEY:
         try:
             from groq import Groq
             client = Groq(api_key=GROQ_API_KEY)
-            chat = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": prompt}])
+            # FIX: llama-3.3-70b-versatile - ye Groq pe abhi active hai
+            chat = client.chat.completions.create(
+                model="llama-3.3-70b-versatile", 
+                messages=[{"role": "user", "content": prompt}]
+            )
             print("[GROQ] Success")
             return chat.choices[0].message.content
         except Exception as e:
             print(f"Groq Error: {e}")
+            # Second try with older model
+            try:
+                client = Groq(api_key=GROQ_API_KEY)
+                chat = client.chat.completions.create(model="llama3-8b-8192", messages=[{"role": "user", "content": prompt}])
+                return chat.choices[0].message.content
+            except Exception as e2:
+                print(f"Groq 2nd Error: {e2}")
     
-    return "Bhai API keys ka masla hai. Railway me OLLAMA_API_KEY ya GROQ_API_KEY sahi se lagao."
+    return "Bhai AI thoda busy hai, 1 minute baad try karo."
 
 def send_whatsapp(to, text):
     url = f"https://graph.facebook.com/v20.0/{PHONE_NUMBER_ID}/messages"
@@ -76,14 +75,14 @@ def webhook():
                 value = change.get("value", {})
                 for msg in value.get("messages", []):
                     phone = msg.get("from")
-                    text = msg.get("text", {}).get("body", "") if msg.get("type") == "text" else f"User sent {msg.get('type')}"
+                    if msg.get("type") != "text": continue
+                    text = msg.get("text", {}).get("body", "")
                     
                     if phone not in user_memory: user_memory[phone] = []
                     user_memory[phone].append(text)
                     user_memory[phone] = user_memory[phone][-5:]
                     
-                    context = " ".join(user_memory[phone])
-                    reply = ask_ai(f"History: {context}\nNew: {text}\nReply short in same language (Urdu/Hindi/English) as friendly bot.")
+                    reply = ask_ai(f"History: {' '.join(user_memory[phone])}\nUser: {text}\nReply in same language short.")
                     send_whatsapp(phone, reply)
     except Exception as e:
         print(f"Webhook Error: {e}")
@@ -91,7 +90,7 @@ def webhook():
 
 @app.route('/')
 def home():
-    return "Bot Running - Ollama + Groq Ready", 200
+    return "Bot Running", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
