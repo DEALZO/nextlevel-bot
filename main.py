@@ -1,8 +1,3 @@
-Boom! Ab pakra gaya asal issue - tumhari screenshot ne bacha liya.
-
-*Groq ne 16 August 2026 ko `llama-3.3-70b-versatile` aur `llama3-8b-8192` dono ko band kar diya hai*, is liye `model_not_found` aa raha hai. 49a0
-
-*Final 100% working code - ab ye wala paste karo, iske baad 200 ayega:*
 from flask import Flask, request, jsonify
 import os, requests
 from groq import Groq
@@ -81,10 +76,3 @@ def home(): return "Bot Running", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
-*requirements.txt:*
-flask
-requests
-groq
-Is baar logs me `[GROQ SUCCESS]` ayega aur WhatsApp pe reply chala jayega. Tumhara WhatsApp send wala part to pehle se hi `200` de raha tha, bas AI model ka naam purana tha.
-
-Paste karke deploy karo, phir WhatsApp pe `hi` bhejo.
