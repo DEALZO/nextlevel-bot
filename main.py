@@ -10,39 +10,30 @@ VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "nextlevel123").strip()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 
 user_memory = {}
+processed_ids = set() # Duplicate message rokne ke liye
 
 def ask_ai(prompt):
-    if not GROQ_API_KEY:
-        return "GROQ_API_KEY missing hai"
-    try:
-        client = Groq(api_key=GROQ_API_KEY)
-        # NEW MODEL - 2026 me ye active hai
-        chat = client.chat.completions.create(
-            model="openai/gpt-oss-20b",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        print(f"[GROQ SUCCESS] {chat.choices[0].message.content[:100]}")
-        return chat.choices[0].message.content
-    except Exception as e:
-        print(f"[GROQ ERROR 1] {e}")
-        try:
-            # Backup model
-            client = Groq(api_key=GROQ_API_KEY)
-            chat = client.chat.completions.create(
-                model="openai/gpt-oss-120b",
-                messages=[{"role": "user", "content": prompt}]
-            )
-            return chat.choices[0].message.content
-        except Exception as e2:
-            print(f"[GROQ ERROR 2] {e2}")
-            return f"Error: {e2}"
+    client = Groq(api_key=GROQ_API_KEY)
+    # System prompt se same reply khatam hoga
+    chat = client.chat.completions.create(
+        model="openai/gpt-oss-20b",
+        messages=[
+            {"role": "system", "content": "You are NextLevel-Bot, a friendly helpful assistant. NEVER repeat the user's exact word. If user says 'Helo', reply 'Helo! Kese ho? Batao kya help chahiye?'. Always give a full helpful sentence, not just one word. Reply in same language as user."},
+            {"role": "user", "content": prompt}
+        ]
+    )
+    reply = chat.choices[0].message.content
+    # Agar phir bhi same hua to force change
+    if reply.strip().lower() == prompt.strip().lower():
+        return "Hi! Batao kya haal hai? Main NextLevel Bot hun, kese madad karun?"
+    return reply
 
 def send_whatsapp(to, text):
     url = f"https://graph.facebook.com/v20.0/{PHONE_NUMBER_ID}/messages"
     headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}", "Content-Type": "application/json"}
     payload = {"messaging_product": "whatsapp", "to": to, "type": "text", "text": {"body": str(text)[:4000]}}
     r = requests.post(url, headers=headers, json=payload)
-    print(f"[WHATSAPP SEND] {r.status_code}")
+    print(f"[WHATSAPP SEND to {to}] {r.status_code}")
 
 @app.route('/webhook', methods=['GET'])
 def verify():
@@ -56,23 +47,27 @@ def webhook():
     try:
         for entry in data.get("entry", []):
             for change in entry.get("changes", []):
-                for msg in change.get("value", {}).get("messages", []):
+                value = change.get("value", {})
+                for msg in value.get("messages", []):
+                    # Duplicate webhook rokna
+                    msg_id = msg.get("id")
+                    if msg_id in processed_ids: continue
+                    processed_ids.add(msg_id)
+                    if len(processed_ids) > 100: processed_ids.clear()
+
                     phone = msg.get("from")
                     if msg.get("type") != "text": continue
                     text = msg.get("text", {}).get("body", "")
-                    
-                    if phone not in user_memory: user_memory[phone] = []
-                    user_memory[phone].append(text)
-                    user_memory[phone] = user_memory[phone][-5:]
-                    
-                    reply = ask_ai(f"Reply short in same language: {text}")
+
+                    print(f"User {phone} says: {text}")
+                    reply = ask_ai(text)
                     send_whatsapp(phone, reply)
     except Exception as e:
         print(f"Webhook Error: {e}")
     return jsonify({"status": "ok"}), 200
 
 @app.route('/')
-def home(): return "Bot Running", 200
+def home(): return "Bot Running - Same Reply Fixed", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
