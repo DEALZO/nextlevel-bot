@@ -3,57 +3,62 @@ import os, requests, base64
 from groq import Groq
 
 app = Flask(__name__)
-WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN", "").strip()
-PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID", "").strip()
-VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "nextlevel123").strip()
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
+WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN","").strip()
+PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID","").strip()
+VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN","nextlevel123").strip()
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY","").strip()
 
 processed = set()
 
-def send(to, text):
+def send_whatsapp(to, text):
     url = f"https://graph.facebook.com/v20.0/{PHONE_NUMBER_ID}/messages"
-    h = {"Authorization": f"Bearer {WHATSAPP_TOKEN}", "Content-Type": "application/json"}
-    p = {"messaging_product": "whatsapp", "to": to, "type": "text", "text": {"body": text[:4000]}}
-    requests.post(url, headers=h, json=p)
-
-def get_b64(media_id):
-    h = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
-    r1 = requests.get(f"https://graph.facebook.com/v20.0/{media_id}", headers=h, timeout=30).json()
-    url = r1.get("url")
-    r2 = requests.get(url, headers=h, timeout=30)
-    return base64.b64encode(r2.content).decode('utf-8')
+    headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}", "Content-Type": "application/json"}
+    payload = {"messaging_product":"whatsapp","to":to,"type":"text","text":{"body":text[:4000]}}
+    r = requests.post(url, headers=headers, json=payload)
+    print(f"[SEND] to {to} status {r.status_code} resp {r.text[:500]}")
+    return r.status_code
 
 def ask_text(q):
     client = Groq(api_key=GROQ_API_KEY)
-    models = ["openai/gpt-oss-20b", "llama-3.3-70b-versatile", "llama3-8b-8192"]
-    for m in models:
+    # YE MODELS 100% GROQ FREE PE WORK KARTE HAIN
+    for model in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]:
         try:
-            c = client.chat.completions.create(model=m, messages=[{"role":"user","content":q}])
-            print(f"[TEXT OK {m}]")
+            print(f"Trying text model {model}")
+            c = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role":"system","content":"You are NextLevel sales bot. You sell websites and AI WhatsApp chatbots. Reply in Roman Urdu, short, sales tone. Never repeat user text as is."},
+                    {"role":"user","content":q}
+                ]
+            )
+            print(f"[TEXT SUCCESS {model}]")
             return c.choices[0].message.content
         except Exception as e:
-            print(f"[TEXT FAIL {m}] {e}")
+            print(f"[TEXT FAIL {model}] {e}")
             continue
-    return "Bot busy hai, 1 min baad try karo"
+    return None
 
 def ask_vision(b64, caption):
     client = Groq(api_key=GROQ_API_KEY)
-    models = ["meta-llama/llama-3.2-11b-vision-preview", "meta-llama/llama-3.2-90b-vision-preview"]
-    for m in models:
+    for model in ["meta-llama/llama-3.2-11b-vision-preview", "meta-llama/llama-3.2-90b-vision-preview"]:
         try:
+            print(f"Trying vision model {model}")
             c = client.chat.completions.create(
-                model=m,
-                messages=[{"role":"user","content":[
-                    {"type":"text","text": f"You are NextLevel sales bot. Sell websites & AI bots. User caption: {caption}. Describe image in Roman Urdu and pitch service."},
-                    {"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}
-                ]}]
+                model=model,
+                messages=[{
+                    "role":"user",
+                    "content":[
+                        {"type":"text","text": f"Describe this image and sell website/chatbot service in Roman Urdu. Caption: {caption}"},
+                        {"type":"image_url","image_url":{"url": f"data:image/jpeg;base64,{b64}"}}
+                    ]
+                }]
             )
-            print(f"[VISION OK {m}]")
+            print(f"[VISION SUCCESS {model}]")
             return c.choices[0].message.content
         except Exception as e:
-            print(f"[VISION FAIL {m}] {e}")
+            print(f"[VISION FAIL {model}] {e}")
             continue
-    return "Pic ka analysis nahi ho saka, Groq vision model access nahi de raha. Lekin is jaisi website hum Rs 20k me bana denge."
+    return "Is pic jaisi website hum bana sakte hain Rs 20k me. Detail batao?"
 
 @app.route('/webhook', methods=['GET'])
 def verify():
@@ -64,36 +69,50 @@ def verify():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.get_json()
-    print(data)
+    print(f"WEBHOOK DATA {data}")
     try:
         for entry in data.get("entry", []):
             for change in entry.get("changes", []):
-                for msg in change.get("value", {}).get("messages", []):
-                    if msg.get("id") in processed: continue
+                value = change.get("value", {})
+                for msg in value.get("messages", []):
+                    if msg.get("id") in processed: 
+                        print("Duplicate, skip")
+                        continue
                     processed.add(msg.get("id"))
+                    
                     phone = msg.get("from")
+                    print(f"NEW MSG type={msg.get('type')} from={phone}")
 
                     if msg.get("type") == "text":
                         txt = msg.get("text",{}).get("body","")
-                        print(f"TEXT {phone}: {txt}")
-                        reply = ask_text(f"Reply in Roman Urdu sales tone for website & AI chatbot business: {txt}")
-                        send(phone, reply)
+                        ans = ask_text(txt)
+                        if ans:
+                            send_whatsapp(phone, ans)
+                        else:
+                            send_whatsapp(phone, f"Groq Error: Model not found. Check GROQ_API_KEY. Your text: {txt}")
 
                     elif msg.get("type") == "image":
-                        print(f"IMAGE {phone}")
-                        send(phone, "Pic mil gayi, 3 sec...")
+                        send_whatsapp(phone, "Pic mil gayi, check kar raha hun...")
                         try:
-                            b64 = get_b64(msg.get("image",{}).get("id"))
+                            mid = msg.get("image",{}).get("id")
                             cap = msg.get("image",{}).get("caption","")
-                            reply = ask_vision(b64, cap)
-                            send(phone, reply)
+                            # download
+                            h = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
+                            r1 = requests.get(f"https://graph.facebook.com/v20.0/{mid}", headers=h, timeout=30).json()
+                            media_url = r1.get("url")
+                            r2 = requests.get(media_url, headers=h, timeout=30)
+                            b64 = base64.b64encode(r2.content).decode('utf-8')
+                            ans = ask_vision(b64, cap)
+                            send_whatsapp(phone, ans)
                         except Exception as e:
-                            print(f"IMG ERR {e}")
-                            send(phone, f"Pic error: {e}")
-
+                            print(f"IMAGE ERR {e}")
+                            send_whatsapp(phone, f"Image download error: {e}")
     except Exception as e:
-        print(f"MAIN ERR {e}")
+        print(f"MAIN WEBHOOK ERR {e}")
     return jsonify({"status":"ok"}), 200
 
 @app.route('/')
-def home(): return "Bot Running Final", 200
+def home(): return "NextLevel Bot - Text+Image Fixed", 200
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT",8000)))
